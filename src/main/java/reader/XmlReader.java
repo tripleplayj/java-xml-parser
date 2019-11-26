@@ -8,107 +8,100 @@ import javax.xml.stream.events.*;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
-import java.util.Iterator;
+import java.text.DateFormat;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+
+import static java.util.Map.Entry.comparingByKey;
+import static java.util.Map.Entry.comparingByValue;
+import static java.util.stream.Collectors.toMap;
 
 public class XmlReader {
 
-    public static void parse(File file) throws FileNotFoundException,
-            XMLStreamException
-    {
-        // Variables to make sure whether a element
-        // in the xml is being accessed or not
-        // if false that means elements is
-        // not been used currently , if true the element or the
-        // tag is being used currently
-        // Instance of the class which helps on reading tags
+    public static void parse(File file) throws FileNotFoundException, XMLStreamException, ParseException {
         XMLInputFactory factory = XMLInputFactory.newInstance();
+        XMLEventReader eventReader = factory.createXMLEventReader(new FileReader(file));
 
-        // Initializing the handler to access the tags in the XML file
-        XMLEventReader eventReader =
-                factory.createXMLEventReader(new FileReader(file));
+        int cToJMsgCount = 0;
+        int jToCMsgCount = 0;
 
-        int count = 0;
+        Map<String, Integer> cToJWordMap = new HashMap<>();
+        Map<String, Integer> jToCWordMap = new HashMap<>();
+        Map<String, Integer> textsByDateMap = new HashMap<>();
 
-        // Checking the availabilty of the next tag
-        while (eventReader.hasNext())
-        {
-            // Event is actually the tag . It is of 3 types
-            // <name> = StartEvent
-            // </name> = EndEvent
-            // data between the StartEvent and the EndEvent
-            // which is Characters Event
+        while (eventReader.hasNext()) {
             XMLEvent event = eventReader.nextEvent();
 
-            // This will trigger when the tag is of type <...>
-            if (event.isStartElement())
-            {
-                StartElement element = (StartElement)event;
+            if (event.isStartElement()) {
+                StartElement element = (StartElement) event;
 
-                // Iterator for accessing the metadeta related
-                // the tag started.
-                // Here, it would name of the company
-                Iterator<Attribute> iterator = element.getAttributes();
-                while (((Iterator) iterator).hasNext())
-                {
-                    Attribute attribute = iterator.next();
-                    QName name = attribute.getName();
-                    String value = attribute.getValue();
-                    //System.out.println(name+" = " + value);
+                if (element.getName().toString().equalsIgnoreCase("sms")) {
+                    String contactName = element.getAttributeByName(new QName("", "contact_name")).getValue();
+                    String message = element.getAttributeByName(new QName("", "body")).getValue();
+                    String type = element.getAttributeByName(new QName("", "type")).getValue();
+                    String date = element.getAttributeByName(new QName("", "readable_date")).getValue();
+                    Map<String, Integer> currMap = new HashMap<String, Integer>();
+                    //TODO: readd appropriate contact name here
+                    if (contactName.equals("")) {
+                        //TODO: I was too tired to parse dates here, but wanted to see if it would work
+                        String[] splitDate = date.split(" ");
+                            String stupidParsedDate = splitDate[0] + splitDate[1] + splitDate[2];
+                            if(textsByDateMap.get(stupidParsedDate) == null) {
+                                textsByDateMap.put(stupidParsedDate, 1);
+                            }
+                            else {
+                                int oldValue = textsByDateMap.get(stupidParsedDate);
+                                oldValue++;
+                                textsByDateMap.put(stupidParsedDate, oldValue);
+                            }
+
+                        if(type.equals("1")) {
+                            cToJMsgCount++;
+                            currMap = cToJWordMap;
+                        }
+                        else if(type.equals("2")) {
+                            jToCMsgCount++;
+                            currMap = jToCWordMap;
+                        }
+                        String[] messageArray = message.split(" ");
+                        for (int i = 0; i < messageArray.length; i++) {
+                            if(currMap.get(messageArray[i].toLowerCase()) == null) {
+                                currMap.put(messageArray[i].toLowerCase(), 1);
+                            }
+                            else {
+                                int oldValue = currMap.get(messageArray[i].toLowerCase());
+                                oldValue++;
+                                currMap.put(messageArray[i].toLowerCase(), oldValue);
+                            }
+                        }
+                    }
                 }
-
-                // Checking which tag needs to be opened for reading.
-                // If the tag matches then the boolean of that tag
-                // is set to be true.
-
-                if (element.getName().toString().equalsIgnoreCase("sms"))
-                {
-                   if(element.getAttributeByName(new QName("", "contact_name")) != null) {
-                       System.out.println(count++);
-                       if(element.getAttributeByName(new QName("", "contact_name")).getValue().equals("")) {
-
-                       }
-                   }
-
-                }
-            }
-
-            // This will be triggered when the tag is of type </...>
-            if (event.isEndElement())
-            {
-                EndElement element = (EndElement) event;
-
-                // Checking which tag needs to be closed after reading.
-                // If the tag matches then the boolean of that tag is
-                // set to be false.
-                if (element.getName().toString().equalsIgnoreCase("comapany"))
-                {
-                }
-                if (element.getName().toString().equalsIgnoreCase("title"))
-                {
-                }
-                if (element.getName().toString().equalsIgnoreCase("name"))
-                {
-                }
-                if (element.getName().toString().equalsIgnoreCase("email"))
-                {
-                }
-                if (element.getName().toString().equalsIgnoreCase("phone"))
-                {
-                }
-            }
-
-            // Triggered when there is data after the tag which is
-            // currently opened.
-            if (event.isCharacters())
-            {
-                // Depending upon the tag opened the data is retrieved .
-                Characters element = (Characters) event;
-//                if (bcompany)
-//                {
-//                    System.out.println(element.getData());
-//                }
             }
         }
-    }
+        System.out.println("C to J " + cToJMsgCount);
+        System.out.println("J to C " + jToCMsgCount);
+        System.out.println("Total texts " + (cToJMsgCount + jToCMsgCount));
 
+        Map<String, Integer> cToJWordMapSorted = cToJWordMap
+                                                .entrySet()
+                                                .stream()
+                                                .sorted(Collections.reverseOrder(comparingByValue())).collect(toMap(e -> e.getKey(), e -> e.getValue(), (e1, e2) -> e2, LinkedHashMap::new));
+
+        Map<String, Integer> jToCWordMapSorted = jToCWordMap
+                                                .entrySet()
+                                                .stream()
+                                                .sorted(Collections.reverseOrder(comparingByValue())).collect(toMap(e -> e.getKey(), e -> e.getValue(), (e1, e2) -> e2, LinkedHashMap::new));
+
+        Map<String, Integer> dateMapSorted = textsByDateMap
+                .entrySet()
+                .stream()
+                .sorted(Collections.reverseOrder(comparingByValue())).collect(toMap(e -> e.getKey(), e -> e.getValue(), (e1, e2) -> e2, LinkedHashMap::new));
+
+        System.out.println();
+
+        System.out.println();
+    }
 }
